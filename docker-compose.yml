@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  edgetpu-workspace:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: edgetpu-workspace
+    privileged: true
+    devices:
+      - "/dev/apex_0:/dev/apex_0"
+    volumes:
+      - ./workspace:/workspace
+      - ./notebooks:/workspace/notebooks
+    ports:
+      - "8888:8888"
+    environment:
+      - TPU_LOAD_LIBRARY=1
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+    stdin_open: true
+    tty: true
+
+  edgetpu-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: edgetpu-dev
+    privileged: true
+    devices:
+      - "/dev/apex_0:/dev/apex_0"
+    volumes:
+      - ./workspace:/workspace
+    environment:
+      - TPU_LOAD_LIBRARY=1
+    cap_add:
+      - SYS_ADMIN
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
