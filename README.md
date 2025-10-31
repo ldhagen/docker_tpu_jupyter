@@ -84,7 +84,8 @@ ModuleNotFoundError: No module named 'pycoral.utils'
 pip uninstall pycoral
 
 # Install the correct system package
-apt-get update
+apt-get remove --purge -y python3-pycoral
+apt-get autoremove -y
 apt-get install -y python3-pycoral
 
 # Verify correct installation
@@ -173,13 +174,13 @@ tflite_quant_model = converter.convert()
 ## 📁 Project Structure
 
 ```
-tpu_test3/
-├── docker-compose.yml          # Multi-container setup
-├── Dockerfile                  # Edge TPU environment
-├── test_edgetpu.py            # Comprehensive TPU test
-├── fix_pycoral_conflict.py    # Troubleshooting script
-├── workspace/                  # Your code and models
-├── notebooks/                  # Jupyter notebooks
+docker_tpu_jupyter/
+├── docker-compose.yml            # Multi-container setup
+├── Dockerfile                    # Edge TPU environment
+├── /workspace/test_edgetpu.py    # Comprehensive TPU test
+├── /workspace/verify_edgetpu.py  # TPU verify
+├── workspace/                    # Your code and models
+├── notebooks/                    # Jupyter notebooks
 └── README.md
 ```
 
@@ -458,15 +459,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Happy Coding with Edge TPU!** 🚀
 ```
-
-## Key Improvements in this Rewrite:
-
-1. **Prominent Warning Section** - Immediately addresses the pycoral conflict issue
-2. **Detailed Troubleshooting Guide** - Step-by-step solutions for common problems
-3. **Comprehensive Error Scenarios** - Covers all issues we encountered
-4. **Automated Fix Script** - Reference to a script that can automatically resolve issues
-5. **Robust Code Examples** - Error-handling and fallback mechanisms
-6. **Clear Recovery Procedures** - What to do when things go wrong
-7. **Structured Problem-Solution Format** - Easy to follow troubleshooting
-8. **Practical Workflows** - From setup to daily development
 
