@@ -1,8 +1,6 @@
 ```markdown
 # Edge TPU Development Environment
 
-<div align="center" style="background-color: #ff4444; color: white; padding: 20px; border-radius: 10px; border: 3px solid #cc0000; margin-bottom: 30px;">
-  
 # 🚨 CRITICAL KERNEL REQUIREMENT 🚨
 
 ## **YOUR HOST SYSTEM MUST BOOT WITH LINUX KERNEL 6.8+ FOR EDGE TPU DRIVERS TO WORK**
@@ -14,7 +12,6 @@
 uname -r
 ```
 
-</div>
 
 A complete Docker-based development environment for Google Coral Edge TPU (M.2 version) with TensorFlow Lite integration. This setup provides reliable access to Edge TPU hardware for machine learning inference acceleration.
 
