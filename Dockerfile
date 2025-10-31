@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
     lsb-release \
+    vim \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Add Google Coral repository
