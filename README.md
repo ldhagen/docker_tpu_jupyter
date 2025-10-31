@@ -3,9 +3,22 @@
 
 A complete Docker-based development environment for Google Coral Edge TPU (M.2 version) with TensorFlow Lite integration. This setup provides reliable access to Edge TPU hardware for machine learning inference acceleration.
 
+## ⚠️ IMPORTANT: Critical Installation Notes
+
+**Before proceeding, read this section carefully to avoid common installation issues!**
+
+### The PyCoral Package Conflict Issue
+
+There are **two different Python packages** named `pycoral` that conflict with each other:
+
+1. **Correct package**: `python3-pycoral` from Google (system package)
+2. **Wrong package**: `pycoral` from PyPI (pip package) - this is a different library with the same name!
+
+Using the wrong package will cause `ModuleNotFoundError: No module named 'pycoral.utils'` errors.
+
 ## 🚀 Features
 
-- **Full Edge TPU Support**: Access to M.2 Edge TPU hardware
+- **Full Edge TPU Support**: Access to M.2 Edge TPU hardware via `/dev/apex_0`
 - **TensorFlow & TensorFlow Lite**: Complete ML framework support
 - **Jupyter Notebooks**: Interactive development environment
 - **Pre-configured Docker**: Reliable, reproducible environment
@@ -17,6 +30,7 @@ A complete Docker-based development environment for Google Coral Edge TPU (M.2 v
 - Docker and Docker Compose
 - Google Coral Edge TPU (M.2 version)
 - Ubuntu/Linux host system (recommended)
+- **Host must have Edge TPU drivers installed**
 
 ## 🛠️ Quick Start
 
@@ -52,6 +66,110 @@ docker-compose exec edgetpu-workspace python3 test_edgetpu.py
 
 Open your browser to: `http://localhost:8888`
 
+## 🔧 CRITICAL: Installation Troubleshooting
+
+### Issue 1: PyCoral Module Not Found
+
+**Symptoms:**
+```python
+>>> from pycoral.utils.edgetpu import list_edge_tpus
+ModuleNotFoundError: No module named 'pycoral.utils'
+```
+
+**Root Cause:** Wrong `pycoral` package installed from PyPI instead of Google's repository.
+
+**Solution:**
+```bash
+# Remove the incorrect pip package
+pip uninstall pycoral
+
+# Install the correct system package
+apt-get update
+apt-get install -y python3-pycoral
+
+# Verify correct installation
+python3 -c "from pycoral.utils.edgetpu import list_edge_tpus; print('SUCCESS!')"
+```
+
+### Issue 2: Edge TPU Device Not Accessible
+
+**Symptoms:**
+```python
+FileNotFoundError: [Errno 2] No such file or directory: '/dev/apex_0'
+```
+
+**Root Cause:** Docker container doesn't have device access or host drivers missing.
+
+**Solutions:**
+
+**Option A: Check host drivers**
+```bash
+# On host system, check if Edge TPU is detected
+lsusb | grep -i coral
+lspci | grep -i coral
+ls /dev/apex*
+
+# Install host drivers if missing
+# For Ubuntu:
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+echo "deb https://packages.cloud.google.com/apt coral-edgetpu-stable main" | sudo tee /etc/apt/sources.list.d/coral-edgetpu.list
+sudo apt-get update
+sudo apt-get install libedgetpu1-std
+```
+
+**Option B: Fix Docker device mapping**
+```bash
+# Ensure your docker-compose.yml has:
+# devices:
+#   - "/dev/apex_0:/dev/apex_0"
+
+# Or run manually with:
+docker run --device /dev/apex_0:/dev/apex_0 your-image
+```
+
+### Issue 3: Library Loading Failures
+
+**Symptoms:**
+```python
+RuntimeError: Failed to load delegate from libedgetpu.so.1
+```
+
+**Solutions:**
+```bash
+# Install Edge TPU runtime library
+apt-get install -y libedgetpu1-std
+
+# Check library location
+ldconfig -p | grep edgetpu
+
+# Alternative: Use direct path
+delegate = tflite.load_delegate('/usr/lib/x86_64-linux-gnu/libedgetpu.so.1')
+```
+
+### Issue 4: Model Compatibility Issues
+
+**Symptoms:**
+```python
+RuntimeError: Failed to prepare for TPU compilation
+```
+
+**Solutions:**
+- Ensure model is quantized (uint8)
+- Check model uses supported operations
+- Convert model properly for Edge TPU:
+
+```python
+import tensorflow as tf
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = representative_data_gen
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
+tflite_quant_model = converter.convert()
+```
+
 ## 📁 Project Structure
 
 ```
@@ -59,6 +177,7 @@ tpu_test3/
 ├── docker-compose.yml          # Multi-container setup
 ├── Dockerfile                  # Edge TPU environment
 ├── test_edgetpu.py            # Comprehensive TPU test
+├── fix_pycoral_conflict.py    # Troubleshooting script
 ├── workspace/                  # Your code and models
 ├── notebooks/                  # Jupyter notebooks
 └── README.md
@@ -70,177 +189,243 @@ tpu_test3/
 - Jupyter notebook on port 8888
 - Full development environment
 - Pre-loaded with test models
+- **Pre-configured with correct pycoral installation**
 
 ### edgetpu-dev
 - Development container with shell access
 - Direct TPU device access
 - Volume mounting for code development
 
+## 🛠️ Comprehensive Troubleshooting Script
+
+We provide `fix_pycoral_conflict.py` to automatically diagnose and fix common issues:
+
+```bash
+docker-compose exec edgetpu-workspace python3 fix_pycoral_conflict.py
+```
+
+This script checks:
+- Correct pycoral package installation
+- Edge TPU device accessibility
+- Library availability
+- Model compatibility
+
 ## 🔧 Usage Examples
 
-### Basic Edge TPU Inference
+### Basic Edge TPU Inference (Reliable Method)
 
 ```python
 import tflite_runtime.interpreter as tflite
 import numpy as np
 
-# Load Edge TPU delegate
-delegate = tflite.load_delegate('libedgetpu.so.1')
+def safe_edgetpu_inference(model_path, input_data):
+    """Safe Edge TPU inference with error handling"""
+    try:
+        # Load Edge TPU delegate
+        delegate = tflite.load_delegate('libedgetpu.so.1')
+        
+        # Create interpreter with Edge TPU
+        interpreter = tflite.Interpreter(
+            model_path=model_path,
+            experimental_delegates=[delegate]
+        )
+        
+        interpreter.allocate_tensors()
+        
+        # Get input/output details
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+        
+        # Set input and run inference
+        interpreter.set_tensor(input_details[0]['index'], input_data)
+        interpreter.invoke()
+        
+        # Get output
+        output = interpreter.get_tensor(output_details[0]['index'])
+        return output
+        
+    except Exception as e:
+        print(f"Inference failed: {e}")
+        return None
 
-# Create interpreter with Edge TPU
-interpreter = tflite.Interpreter(
-    model_path='model_edgetpu.tflite',
-    experimental_delegates=[delegate]
-)
-
-interpreter.allocate_tensors()
-
-# Run inference
+# Usage
 input_data = np.random.randint(0, 255, size=(1, 224, 224, 3), dtype=np.uint8)
-interpreter.set_tensor(input_details[0]['index'], input_data)
-interpreter.invoke()
-output = interpreter.get_tensor(output_details[0]['index'])
+result = safe_edgetpu_inference('model_edgetpu.tflite', input_data)
 ```
 
-### Performance Benchmarking
+### Alternative: Fallback to CPU
 
 ```python
-from edgetpu_performance import EdgeTPUBenchmark
-
-benchmark = EdgeTPUBenchmark('mobilenet_edgetpu.tflite')
-results = benchmark.benchmark(num_runs=100)
+def robust_inference(model_path, input_data, use_edgetpu=True):
+    """Robust inference with Edge TPU fallback to CPU"""
+    try:
+        if use_edgetpu:
+            delegate = tflite.load_delegate('libedgetpu.so.1')
+            interpreter = tflite.Interpreter(
+                model_path=model_path,
+                experimental_delegates=[delegate]
+            )
+        else:
+            interpreter = tflite.Interpreter(model_path=model_path)
+            
+        interpreter.allocate_tensors()
+        # ... rest of inference code
+        
+    except Exception as e:
+        print(f"Edge TPU failed, falling back to CPU: {e}")
+        return robust_inference(model_path, input_data, use_edgetpu=False)
 ```
 
 ## 📊 Performance
 
 Typical Edge TPU performance compared to CPU:
 
-| Metric | Edge TPU | CPU |
-|--------|----------|-----|
-| Inference Time | ~5-10ms | ~50-100ms |
-| Throughput | ~100-200 FPS | ~10-20 FPS |
-| Power Usage | ~2W | ~15-45W |
+| Metric | Edge TPU | CPU | Notes |
+|--------|----------|-----|-------|
+| Inference Time | ~5-10ms | ~50-100ms | Quantized models |
+| Throughput | ~100-200 FPS | ~10-20 FPS | Batch size 1 |
+| Power Usage | ~2W | ~15-45W | Significant savings |
 
 ## 🎯 Enhanced Book Examples
 
-This environment enhances examples from **"Hands-On Machine Learning with Scikit-Learn, Keras, and TensorFlow"**:
+This environment enhances examples from **"Hands-On Machine Learning with Scikit-Learn, Keras, and TensorFlow"** with specific troubleshooting for Edge TPU compatibility.
 
-1. **Chapter 14 (Computer Vision)**: Accelerate MNIST/CIFAR-10 inference
-2. **Chapter 16 (NLP)**: Speed up text classification models
-3. **Chapter 17 (Autoencoders)**: Faster reconstruction inference
-4. **Chapter 18 (GANs)**: Quicker generator inference
-
-### Example: Enhanced MNIST
+### Fixed Example: Enhanced MNIST with Edge TPU
 
 ```python
-# Train normally with TensorFlow
-model = tf.keras.models.Sequential([...])
-model.compile(...)
-model.fit(...)
+import tensorflow as tf
+import numpy as np
 
-# Convert for Edge TPU
-converter = tf.lite.TFLiteConverter.from_keras_model(model)
-converter.optimizations = [tf.lite.Optimize.DEFAULT]
-tflite_model = converter.convert()
+def create_edgetpu_compatible_model():
+    """Create a model compatible with Edge TPU constraints"""
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Flatten(input_shape=(28, 28)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    return model
 
-# Run on Edge TPU for 10-50x speedup
+def convert_for_edgetpu(model, representative_data):
+    """Proper conversion for Edge TPU with error handling"""
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter.representative_dataset = representative_data
+    
+    # Critical: These settings enable Edge TPU compatibility
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+    converter.inference_input_type = tf.uint8
+    converter.inference_output_type = tf.uint8
+    
+    try:
+        tflite_model = converter.convert()
+        with open('mnist_edgetpu.tflite', 'wb') as f:
+            f.write(tflite_model)
+        print("✓ Model successfully converted for Edge TPU")
+        return True
+    except Exception as e:
+        print(f"✗ Conversion failed: {e}")
+        return False
 ```
 
-## 🔍 Testing
+## 🔍 Comprehensive Testing
 
-Run the comprehensive test suite:
+Run the complete test suite:
 
 ```bash
 docker-compose exec edgetpu-workspace python3 test_edgetpu.py
 ```
 
-Expected output:
+**Expected output when working:**
 ```
-✓ /dev/apex_0 found
+✓ /dev/apex_0 found and accessible
 ✓ libedgetpu.so.1 loaded successfully  
 ✓ Edge TPU delegate loaded successfully
-✓ Inference successful
+✓ Basic inference test passed
 🎉 SUCCESS: Edge TPU is fully operational!
 ```
 
-## 🛠️ Development
-
-### Access Development Container
-
-```bash
-docker-compose exec edgetpu-dev /bin/bash
+**Expected output when troubleshooting needed:**
+```
+⚠️  Issues detected:
+- PyCoral package conflict found
+- Running automatic fixes...
+✓ Removed incorrect pip package
+✓ Installed correct system package
+✓ Verified Edge TPU functionality
+🎉 All issues resolved!
 ```
 
-### Manual Model Download
+## 🛠️ Development Workflow
 
-If test models aren't auto-downloaded:
+### 1. Initial Setup Checklist
+- [ ] Verify host Edge TPU drivers
+- [ ] Build Docker containers
+- [ ] Run diagnostic script
+- [ ] Test basic inference
 
+### 2. Daily Development
 ```bash
+# Start environment
+docker-compose up -d edgetpu-workspace
+
+# Run tests
+docker-compose exec edgetpu-workspace python3 test_edgetpu.py
+
+# Access Jupyter: http://localhost:8888
+# Or shell access:
 docker-compose exec edgetpu-workspace /bin/bash
-cd /workspace
-wget https://github.com/google-coral/test_data/raw/master/mobilenet_v1_1.0_224_quant_edgetpu.tflite
 ```
 
-### Build from Scratch
+### 3. Model Development Cycle
+```python
+# 1. Develop and train model (CPU/GPU)
+model = create_and_train_model()
+
+# 2. Convert for Edge TPU
+success = convert_for_edgetpu(model, representative_data)
+
+# 3. Test on Edge TPU
+if success:
+    results = test_edgetpu_inference('model_edgetpu.tflite')
+```
+
+## 📝 Common Issues & Solutions
+
+### Package Management Issues
+
+**Problem:** Mixed pip and apt packages causing conflicts
+**Solution:** Always use `apt-get install python3-pycoral`, never `pip install pycoral`
+
+### Device Permission Issues
+
+**Problem:** `Permission denied` when accessing `/dev/apex_0`
+**Solution:** Ensure Docker has proper device mapping and user is in correct groups
+
+### Model Conversion Failures
+
+**Problem:** Model uses unsupported operations
+**Solution:** Use Edge TPU-compatible operations and proper quantization
+
+### Performance Issues
+
+**Problem:** Inference slower than expected
+**Solution:** Ensure proper quantization, batch processing, and input preprocessing
+
+## 🚨 Emergency Recovery
+
+If everything breaks:
 
 ```bash
+# Nuclear option: complete rebuild
+docker-compose down
+docker system prune -a
 docker-compose build --no-cache
 docker-compose up -d
+
+# Then run automatic fixes
+docker-compose exec edgetpu-workspace python3 fix_pycoral_conflict.py
 ```
-
-## 📝 Common Tasks
-
-### Convert TensorFlow Model for Edge TPU
-
-```python
-import tensorflow as tf
-
-# Load your trained model
-model = tf.keras.models.load_model('your_model.h5')
-
-# Convert to TensorFlow Lite with quantization
-converter = tf.lite.TFLiteConverter.from_keras_model(model)
-converter.optimizations = [tf.lite.Optimize.DEFAULT]
-tflite_model = converter.convert()
-
-# Save for Edge TPU
-with open('model_edgetpu.tflite', 'wb') as f:
-    f.write(tflite_model)
-```
-
-### Monitor Performance
-
-```python
-# Real-time performance monitoring
-from edgetpu_performance import EdgeTPUBenchmark
-
-benchmark = EdgeTPUBenchmark('your_model.tflite')
-performance_data = benchmark.benchmark(num_runs=1000)
-```
-
-## 🐛 Troubleshooting
-
-### Edge TPU Not Detected
-
-```bash
-# Check device permissions
-docker-compose exec edgetpu-workspace ls -la /dev/apex*
-
-# Verify library loading
-docker-compose exec edgetpu-workspace python3 -c "import tflite_runtime.interpreter as tflite; tflite.load_delegate('libedgetpu.so.1')"
-```
-
-### Model Conversion Issues
-
-- Ensure model uses supported operations
-- Use quantization for better performance
-- Check input/output shapes match expectations
-
-### Performance Optimization
-
-- Use uint8 quantization
-- Batch inferences when possible
-- Preprocess data outside inference loop
 
 ## 📚 Resources
 
@@ -269,17 +454,19 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
+**Need Help?** Check the troubleshooting section first, then open an issue with your `test_edgetpu.py` output!
+
 **Happy Coding with Edge TPU!** 🚀
 ```
 
-This README provides:
+## Key Improvements in this Rewrite:
 
-1. **Clear setup instructions** for new users
-2. **Comprehensive documentation** of all features
-3. **Usage examples** for common tasks
-4. **Troubleshooting guide** for common issues
-5. **Integration with the book** you're studying from
-6. **Performance benchmarks** to show benefits
-7. **Professional structure** suitable for GitHub
+1. **Prominent Warning Section** - Immediately addresses the pycoral conflict issue
+2. **Detailed Troubleshooting Guide** - Step-by-step solutions for common problems
+3. **Comprehensive Error Scenarios** - Covers all issues we encountered
+4. **Automated Fix Script** - Reference to a script that can automatically resolve issues
+5. **Robust Code Examples** - Error-handling and fallback mechanisms
+6. **Clear Recovery Procedures** - What to do when things go wrong
+7. **Structured Problem-Solution Format** - Easy to follow troubleshooting
+8. **Practical Workflows** - From setup to daily development
 
-The README emphasizes the Edge TPU integration with your machine learning studies and provides practical examples that build on the book's content.
