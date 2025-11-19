@@ -225,7 +225,7 @@ docker-compose up -d edgetpu-workspace
 # Check status
 docker-compose ps
 ```
-
+!!!!! manually start Jupyter with --- nohup jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --notebook-dir=/workspace 2>&1 & !!!!!
 ### 3. Verify Edge TPU
 
 ```bash
